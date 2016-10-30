@@ -50,10 +50,12 @@
 #define __SIMPLE_MEMORY_HH__
 
 #include <list>
+#include <string>
 
 #include "mem/abstract_mem.hh"
 #include "mem/port.hh"
 #include "params/SimpleMemory.hh"
+#include "base/callback.hh"
 
 /**
  * The simple memory is a basic single-ported memory controller with
@@ -61,6 +63,45 @@
  *
  * @sa  \ref gem5MemorySystem "gem5 Memory System"
  */
+ using namespace std;
+ class StatTracker{
+	
+  public: 
+	void dataAnalyser(uint8_t data[64], uint8_t evenData[64], bool checkSPCM);
+	StatTracker();
+	void printEPOCH(string str);
+	void printACC(string str);
+  	void resetVar();
+  private:	
+	
+
+	///ACC Variables
+	//This array keeps track of bit patterns
+	double bitPatterns[4]; // bitPatterns[0]--> # of "00", bitPatterns[0]--> # of "01",
+						   // bitPatterns[3]--> # of "10", bitPatterns[0]--> # of "11"
+	
+	//This array keeps track of RFDB blocks					   
+	double RFDBCounter[2]; // RFDBCounter[0]--> # of RFDB blocks, RFDBCounter[1]--> # of !RFDB blocks
+	
+	double ditributionRFDB[257]; //We count number of "00" and "11" and increase the corresponding entry
+									//There are 256 cells, so maximum number of "00" or "11" would be 256	
+	double allZeroOne[2];							
+	double SPCMFri[2];// 0--> If SPCM works, 1--> If SPCM does not work
+	
+	///EPOCH Variables
+	double EPOCH_bitPatterns[4]; // bitPatterns[0]--> # of "00", bitPatterns[0]--> # of "01",
+						   // bitPatterns[3]--> # of "10", bitPatterns[0]--> # of "11"
+	
+	//This array keeps track of RFDB blocks					   
+	double EPOCH_RFDBCounter[2]; // RFDBCounter[0]--> # of RFDB blocks, RFDBCounter[1]--> # of !RFDB blocks
+	
+	double EPOCH_ditributionRFDB[257]; //We count number of "00" and "11" and increase the corresponding entry
+									//There are 256 cells, so maximum number of "00" or "11" would be 256	
+	double EPOCH_allZeroOne[2];	
+	double EPOCH_SPCMFri[2];// 0--> If SPCM works, 1--> If SPCM does not work
+};
+
+
 class SimpleMemory : public AbstractMemory
 {
 
@@ -190,6 +231,21 @@ class SimpleMemory : public AbstractMemory
     BaseSlavePort& getSlavePort(const std::string& if_name,
                                 PortID idx = InvalidPortID) override;
     void init() override;
+	
+	
+	///Majid///Decleration 
+	
+	//This function is called on simulation termination. We print out our stat inside ths function
+	void onExit();
+	//This function is called on simulation Dump. We print out our stat inside ths function
+	void onDump();
+	
+	
+	StatTracker writeChecker;					
+	StatTracker readChecker;					
+	StatTracker wholeChecker;					
+
+	///!Majid///Decleration 
 
   protected:
 
@@ -202,5 +258,6 @@ class SimpleMemory : public AbstractMemory
     void recvRespRetry();
 
 };
+
 
 #endif //__SIMPLE_MEMORY_HH__

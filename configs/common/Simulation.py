@@ -258,12 +258,12 @@ def scriptCheckpoints(options, maxtick, cptdir):
     return exit_event
 
 def benchCheckpoints(options, maxtick, cptdir):
-    exit_event = m5.simulate(maxtick - m5.curTick())
-    exit_cause = exit_event.getCause()
-
+    print "******benchCheckpoints Start"
+    # exit_event = m5.simulate(maxtick - m5.curTick())
+    exit_event = m5.simulate()
     num_checkpoints = 0
     max_checkpoints = options.max_checkpoints
-
+    exit_cause = exit_event.getCause()
     while exit_cause == "checkpoint":
         m5.checkpoint(joinpath(cptdir, "cpt.%d"))
         num_checkpoints += 1
@@ -273,7 +273,7 @@ def benchCheckpoints(options, maxtick, cptdir):
 
         exit_event = m5.simulate(maxtick - m5.curTick())
         exit_cause = exit_event.getCause()
-
+    print "******benchCheckpoints Exit"
     return exit_event
 
 # Set up environment for taking SimPoint checkpoints
@@ -422,6 +422,7 @@ def repeatSwitch(testsys, repeat_switch_cpu_list, maxtick, switch_freq):
             return exit_event
 
 def run(options, root, testsys, cpu_class):
+    print "*****RUN*****"
     if options.checkpoint_dir:
         cptdir = options.checkpoint_dir
     elif m5.options.outdir:
@@ -654,6 +655,7 @@ def run(options, root, testsys, cpu_class):
             if options.warmup_insts:
                 exit_event = m5.simulate()
             else:
+                print "*********Line 658"
                 exit_event = m5.simulate(options.standard_switch)
             print "Switching CPUS @ tick %s" % (m5.curTick())
             print "Simulation ends instruction count:%d" % \
@@ -695,12 +697,19 @@ def run(options, root, testsys, cpu_class):
         # If checkpoints are being taken, then the checkpoint instruction
         # will occur in the benchmark code it self.
         if options.repeat_switch and maxtick > options.repeat_switch:
+            print "*****Line 700"
             exit_event = repeatSwitch(testsys, repeat_switch_cpu_list,
                                       maxtick, options.repeat_switch)
         else:
-            exit_event = benchCheckpoints(options, maxtick, cptdir)
+            # exit_event = benchCheckpoints(options, maxtick, cptdir)
+            for num in range(0, 5): 			
+                print "Round# ", num			
+                exit_event = m5.simulate(100000000000)
+                m5.stats.dump()
+	
 
-    print 'Exiting @ tick %i because %s' % (m5.curTick(), exit_event.getCause())
+    # print 'Exiting @ tick %i because %s' % (m5.curTick(), exit_event.getCause())
+   
     if options.checkpoint_at_end:
         m5.checkpoint(joinpath(cptdir, "cpt.%d"))
 

@@ -46,6 +46,10 @@
 #include "mem/simple_mem.hh"
 #include "debug/Drain.hh"
 
+
+#include "base/callback.hh"
+#include "base/statistics.hh"
+
 using namespace std;
 
 SimpleMemory::SimpleMemory(const SimpleMemoryParams* p) :
@@ -55,7 +59,20 @@ SimpleMemory::SimpleMemory(const SimpleMemoryParams* p) :
     retryReq(false), retryResp(false),
     releaseEvent(this), dequeueEvent(this)
 {
+	///Majid/// Registering the callback function
+	Callback* cb = new MakeCallback<SimpleMemory,
+        &SimpleMemory::onExit>(this);
+	registerExitCallback(cb);
+		
+	Callback* cb2 = new MakeCallback<SimpleMemory,
+        &SimpleMemory::onDump>(this);
+	Stats::registerDumpCallback(cb2);	
+		
+	
+	
 }
+
+
 
 void
 SimpleMemory::init()
@@ -76,7 +93,210 @@ SimpleMemory::recvAtomic(PacketPtr pkt)
              "is responding");
 
     access(pkt);
+	
+	///Majid
+	uint8_t hostdata[64] = {}; //our block size is 64B
+	uint8_t hostdata_EVEN[64] = {}; //our block size is 64B
+	uint8_t pktdata[64] = {}; //our block size is 64B
+	
+	uint8_t *hostAddr = pmemAddr + pkt->getAddr() - range.start();
+	std::memcpy(hostdata, hostAddr, 64);
+	std::memcpy(hostdata_EVEN, hostAddr+64, 64);
+	std::memcpy(pktdata, pkt->getConstPtr<uint8_t>(), 64);
+	
+	if(pkt->isWrite() && pkt->hasData() && (pkt->getSize() == 64) )
+		writeChecker.dataAnalyser(pktdata, hostdata_EVEN, true);
+	
+	if(pkt->isRead())//For read packets,there is no payload in packet and we need to reterive the data from PHY mem
+		readChecker.dataAnalyser(hostdata, hostdata_EVEN, true);
+	
+	///!Majid
+	
     return getLatency();
+}
+
+void
+SimpleMemory::onExit()
+{
+	cout<<"onExit SimpleMemory "<<curTick()<<endl;
+	writeChecker.printACC("write");
+	readChecker.printACC("read");
+
+}
+
+void
+SimpleMemory::onDump() 
+{
+	cout<<"*******onDump SimpleMemory "<<curTick()<<endl;
+	cout<<"====WRITE PRINT Dump"<<endl;
+	writeChecker.printEPOCH("write");
+	writeChecker.resetVar();
+	cout<<"====WRITE PRINT ACC"<<endl;
+	writeChecker.printACC("write");
+	
+	cout<<"====READ PRINT Dump"<<endl;
+	readChecker.printEPOCH("read");
+	readChecker.resetVar();
+	cout<<"====READ PRINT ACC"<<endl;
+	readChecker.printACC("read");
+	
+	for(long int i = 100 ; i < ( size()/64) ; i++){ //16GB/64B=268,435,456
+		uint8_t hostdata[64] = {};
+		uint8_t dumy[64] = {};
+		// cout<<"range.start() "<<range.start()<<endl;
+		// cout<<"size() "<< size()<<endl;
+		// cout<<"pmemAddr "<< pmemAddr<<endl;
+		// getchar();
+		// cout<<"getAddrRange()  "<<  getAddrRange() <<endl;
+		uint8_t *hostAddr = pmemAddr + (i*64) - range.start();
+		std::memcpy(hostdata, hostAddr, 64);
+		wholeChecker.dataAnalyser(hostdata, dumy, false);
+	}
+	cout<<"====whole PRINT Dump"<<endl;
+	wholeChecker.printEPOCH("whole");
+	wholeChecker.resetVar();
+	cout<<"====whole PRINT ACC"<<endl;
+	wholeChecker.printACC("whole");
+	
+}
+
+StatTracker::StatTracker()
+{
+	//Manual initialiation; some platforms are wicked
+	bitPatterns[0]=bitPatterns[1]=bitPatterns[2]=bitPatterns[3]=0;
+	RFDBCounter[0]=RFDBCounter[1]=0;
+	allZeroOne[0]=allZeroOne[1]=0;
+	EPOCH_SPCMFri[0]=EPOCH_SPCMFri[1]=0;
+	SPCMFri[0]=SPCMFri[1]=0;
+	for(int i = 0 ; i < 257 ; i++){
+		ditributionRFDB[i]  = 0;
+	}
+	
+}
+
+
+	
+void
+StatTracker::printEPOCH(string str)
+{
+	double tot = 0;
+	for(int i = 0 ; i < 4 ; i++){
+		tot += EPOCH_bitPatterns[i];
+	}
+	cout<<str+"_DUMP_Frequency of bit patterns ";
+	for(int i = 0 ; i < 4 ; i++){
+		cout<<EPOCH_bitPatterns[i]/tot<<" ";
+	}cout<<endl;
+	
+	cout<<str+"_DUMP_RFDB Ratio "<<EPOCH_RFDBCounter[0]/(EPOCH_RFDBCounter[0]+EPOCH_RFDBCounter[1])<<endl;
+	
+	cout<<str+"_DUMP_Distibution of 00 or 11 ";
+	for(int i = 0 ; i < 257 ; i++){
+		cout<<EPOCH_ditributionRFDB[i]<<" ";
+	}cout<<endl;
+	
+	cout<<str+"_DUMP_AllZO ratio "<<EPOCH_allZeroOne[0]/(EPOCH_allZeroOne[0]+EPOCH_allZeroOne[1])<<endl;
+	cout<<str+"_DUMP_SPCMFri ratio "<<EPOCH_SPCMFri[0]/(EPOCH_SPCMFri[0]+EPOCH_SPCMFri[1])<<endl;
+
+}
+
+void
+StatTracker::printACC(string str)
+{
+	double tot = 0;
+	for(int i = 0 ; i < 4 ; i++){
+		tot += bitPatterns[i];
+	}
+	cout<<str+"_ACC_Frequency of bit patterns ";
+	for(int i = 0 ; i < 4 ; i++){
+		cout<<bitPatterns[i]/tot<<" ";
+	}cout<<endl;
+	
+	cout<<str+"_ACC_RFDB Ratio "<<RFDBCounter[0]/(RFDBCounter[0]+RFDBCounter[1])<<endl;
+	cout<<str+"_ACC_Distibution of 00 or 11 "<<endl;
+	for(int i = 0 ; i < 257 ; i++){
+		cout<<ditributionRFDB[i]<<" ";
+	}cout<<endl;
+	cout<<str+"_ACC_AllZO ratio "<<allZeroOne[0]/(allZeroOne[0]+allZeroOne[1])<<endl;
+	cout<<str+"_ACC_SPCMFri ratio "<<SPCMFri[0]/(SPCMFri[0]+SPCMFri[1])<<endl;
+}
+
+void 
+StatTracker::dataAnalyser(uint8_t data[64], uint8_t evenData[64], bool CheckSPCM)
+{
+	
+	
+	//Now, we just need a loop
+	bool isRFDB= true;
+	int num00or11 = 0 ;
+	int allZO = 0; //check for all zero or one
+	for(int i = 0 ; i < 64 ; i++){
+		if(data[i] == 0 || data[i] == 255 )
+			allZO++;
+		for(int j = 0 ; j < 4 ; j++){//Counts to 4, since we consider 2-bit MLC PCM
+			uint8_t chPacket = (( data[i]>>(2*j))&0x3);
+			assert(chPacket < 4);
+			bitPatterns[chPacket]++;// the corresponding entry for each bit pattern is increased!
+			EPOCH_bitPatterns[chPacket]++;// the corresponding entry for each bit pattern is increased!
+			if((chPacket==1) || (chPacket==2) ){
+				isRFDB = false;
+			}
+			if((chPacket==0) || (chPacket==3) ){
+				num00or11++;
+			}
+			
+		}
+	}
+	if(isRFDB){
+		RFDBCounter[0]++;
+		EPOCH_RFDBCounter[0]++;
+	}else{
+		RFDBCounter[1]++;
+		EPOCH_RFDBCounter[1]++;
+	}
+	// assert(num00or11 < 256);
+	ditributionRFDB[num00or11]++;
+	EPOCH_ditributionRFDB[num00or11]++;
+	if(allZO == 64){
+		allZeroOne[0]++;
+		EPOCH_allZeroOne[0]++;
+	}else{
+		allZeroOne[1]++;
+		EPOCH_allZeroOne[1]++;
+	}
+	bool goodSPCM = true;
+	if(CheckSPCM){
+		for(int i = 0 ; i < 64 ; i++){
+			for(int j = 0 ; j < 8 ; j++){
+				int ch1  = (( data[i]>>(j))&0x1);
+				int ch2  = (( evenData[i]>>(j))&0x1);
+				if(ch1 != ch2){
+					goodSPCM = false;
+					break;
+				}
+			}
+		}
+	}
+	if(goodSPCM){
+		SPCMFri[0]++;
+		EPOCH_SPCMFri[0]++;
+	}else{
+		SPCMFri[1]++;
+		EPOCH_SPCMFri[1]++;
+	}
+	
+}
+
+void
+StatTracker::resetVar()
+{
+	EPOCH_bitPatterns[0]=EPOCH_bitPatterns[1]=EPOCH_bitPatterns[2]=EPOCH_bitPatterns[3]=0;
+	EPOCH_RFDBCounter[0]=EPOCH_RFDBCounter[1]=0;
+	EPOCH_allZeroOne[0]=EPOCH_allZeroOne[1]=0;
+	for(int i = 0 ; i < 257 ; i++){
+		EPOCH_ditributionRFDB[i] = 0;
+	}
+	
 }
 
 void
